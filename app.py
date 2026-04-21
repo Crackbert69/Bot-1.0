@@ -69,12 +69,26 @@ if uploaded_files and suchbegriff:
                     st.write(res['Vorschau'])
         
         with col2:
-            if KI_BEREIT:
-                st.subheader("🧠 KI-Experten-Check")
-                if st.button("Diese Fundstellen analysieren"):
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    prompt = f"Basierend auf diesen Textstellen: {full_text_context[:5000]} \n\n Beantworte/Analysiere: {suchbegriff}"
-                    response = model.generate_content(prompt)
-                    st.info(response.text)
-            else:
-                st.warning("KI-Key fehlt in den Streamlit-Secrets!")
+if KI_BEREIT:
+    st.subheader("🧠 KI-Experten-Check")
+    if st.button("Diese Fundstellen analysieren"):
+        try:
+            # Wir suchen automatisch nach dem besten verfügbaren Modell
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            
+            # Wir priorisieren Gemini 3, dann 1.5
+            selected_model = "gemini-1.5-flash" # Standard-Fallback
+            for m_name in available_models:
+                if "gemini-3-flash" in m_name:
+                    selected_model = m_name
+                    break
+            
+            model = genai.GenerativeModel(selected_model)
+            prompt = f"Analysiere diese Textstellen: {full_text_context[:5000]} \n Frage: {suchbegriff}"
+            response = model.generate_content(prompt)
+            st.info(f"Genutztes Modell: {selected_model}")
+            st.write(response.text)
+            
+        except Exception as e:
+            st.error(f"KI-Fehler: {e}")
+            st.write("Versuche im AI Studio einen neuen Key für 'Gemini 3' zu erstellen.")
