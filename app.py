@@ -7,7 +7,6 @@ import re
 st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
 
 # --- BLAUE MARKIERUNG CSS ---
-# Wir nutzen eine sichere Methode für das Design
 st.markdown("""
     <style>
     div.stMarkdown b { color: #1E90FF; font-weight: bold; }
@@ -52,7 +51,6 @@ if uploaded_files and suchbegriff:
     
     with st.status("Dokumente werden analysiert...", expanded=False) as status:
         for up_file in uploaded_files:
-            # PDFs im Cache speichern für Speed
             if up_file.name not in st.session_state.pdf_cache:
                 doc = fitz.open(stream=up_file.read(), filetype="pdf")
                 st.session_state.pdf_cache[up_file.name] = [p.get_text() for p in doc]
@@ -60,22 +58,17 @@ if uploaded_files and suchbegriff:
             pages = st.session_state.pdf_cache[up_file.name]
             for i, page_text in enumerate(pages):
                 if suchbegriff.lower() in page_text.lower():
-                    # Fundstelle ausschneiden (Zentriert)
                     start_pos = page_text.lower().find(suchbegriff.lower())
-                    start_idx = max(0, start_pos - 250)
-                    end_idx = min(len(page_text), start_pos + 250)
-                    snippet = page_text[start_idx:end_idx].replace("\n", " ").strip()
+                    snippet = page_text[max(0, start_pos - 250):min(len(page_text), start_pos + 250)].replace("\n", " ").strip()
                     
-                    # Suchwort markieren (wird durch CSS oben blau)
                     pattern = re.compile(re.escape(suchbegriff), re.IGNORECASE)
                     highlighted = pattern.sub(f"**{suchbegriff}**", snippet)
                     
                     all_results.append({"file": up_file.name, "page": i+1, "text": highlighted})
-                    full_text_context += f"\n--- Seite {i+1} ---\n{page_text}"
+                    full_text_context += f"\n{page_text}"
         
         status.update(label="Suche abgeschlossen!", state="complete")
 
-    # Zweispaltiges Layout
     col1, col2 = st.columns(2)
     
     with col1:
@@ -85,38 +78,39 @@ if uploaded_files and suchbegriff:
                 with st.expander(f"Seite {res['page']} - {res['file']}"):
                     st.markdown(res['text'])
         else:
-            st.warning("Keine Treffer im Text gefunden.")
+            st.warning("Keine Treffer gefunden.")
 
     with col2:
         st.subheader("💬 Chat")
-        # Verlauf anzeigen
         for m in st.session_state.messages:
             with st.chat_message(m["role"]):
                 st.markdown(m["content"])
 
         if KI_BEREIT and st.button("KI Analyse starten"):
-            # User Nachricht hinzufügen
             st.session_state.messages.append({"role": "user", "content": suchbegriff})
             with st.chat_message("user"):
                 st.markdown(suchbegriff)
             
             try:
-                # Automatisches Finden des richtigen Modells (Gemini 3 oder 1.5)
+                # Modellauswahl: Wir erzwingen Flash für höhere Limits
                 available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                target = "models/gemini-1.5-flash" # Standard
-                if any("gemini-3" in m for m in available):
-                    target = [m for m in available if "gemini-3" in m][0]
-                elif any("gemini-1.5-flash" in m for m in available):
+                
+                # Wir suchen nach der stabilsten Flash-Version
+                target = "models/gemini-1.5-flash" 
+                if any("gemini-1.5-flash" in m for m in available):
                     target = [m for m in available if "gemini-1.5-flash" in m][0]
+                elif any("flash" in m.lower() for m in available):
+                    target = [m for m in available if "flash" in m.lower()][0]
 
                 model = genai.GenerativeModel(target)
                 
-                with st.spinner(f"Bot 1.0 analysiert mit {target}..."):
+                with st.spinner("Bot 1.0 denkt nach..."):
                     prompt = (
-                        f"SYSTEM: Antworte NUR basierend auf dem PDF-Text. Erfinde nichts dazu.\n"
-                        f"KONTEXT:\n{full_text_context[:12000]}\n\n"
-                        f"FRAGE: {suchbegriff}\n\n"
-                        f"HINWEIS: Füge am Ende eine Sektion '🌐 Recherche-Empfehlung' an."
+                        f"Du bist Bot 1.0. Antworte NUR basierend auf diesem Text:\n"
+                        f"{full_text_context[:10000]}\n\n"
+                        f"Frage: {suchbegriff}\n\n"
+                        f"WICHTIG: Antworte auf Deutsch. "
+                        f"Füge am Ende '🌐 Recherche-Empfehlung' mit Web-Suchbegriffen hinzu."
                     )
                     
                     response = model.generate_content(prompt)
@@ -125,4 +119,7 @@ if uploaded_files and suchbegriff:
                         st.markdown(response.text)
             
             except Exception as e:
-                st.error(f"KI-Fehler: {e}")
+                if "429" in str(e):
+                    st.error("⏳ Limit erreicht. Google erlaubt im Gratis-Tarif nur wenige Fragen pro Minute. Bitte warte kurz und klicke dann erneut auf den Button.")
+                else:
+                    st.error(f"KI-Fehler: {e}")
