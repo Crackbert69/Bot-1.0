@@ -2,6 +2,10 @@ import streamlit as st
 import fitz  # PyMuPDF
 import google.generativeai as genai
 import re
+import subprocess
+import sys
+import os
+from io import BytesIO
 
 st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
 
@@ -47,12 +51,49 @@ def highlight_text(text, keyword):
         text
     )
 
+def export_as_txt():
+    lines = []
+    lines.append("=== Bot 1.0 - Exportierte KI-Antworten ===\n")
+    for m in st.session_state.messages:
+        if m["role"] == "user":
+            lines.append(f"\n[FRAGE]\n{m['content']}\n")
+        else:
+            lines.append(f"\n[KI-ANTWORT]\n{m['content']}\n")
+            lines.append("-" * 60)
+    return "\n".join(lines).encode("utf-8")
+
+def export_as_html():
+    html = """<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Bot 1.0 Export</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #1E90FF; }
+        .frage { background: #16213e; border-left: 4px solid #1E90FF; padding: 12px; margin: 20px 0; border-radius: 4px; }
+        .antwort { background: #0f3460; padding: 12px; margin: 10px 0; border-radius: 4px; }
+        .label { color: #1E90FF; font-weight: bold; font-size: 0.85em; margin-bottom: 6px; }
+        hr { border-color: #333; }
+    </style>
+</head>
+<body>
+    <h1>🤖 Bot 1.0 – Exportierte Antworten</h1>
+"""
+    for m in st.session_state.messages:
+        if m["role"] == "user":
+            html += f'<div class="frage"><div class="label">FRAGE</div>{m["content"]}</div>'
+        else:
+            content = m["content"].replace("\n", "<br>")
+            html += f'<div class="antwort"><div class="label">KI-ANTWORT</div>{content}</div><hr>'
+    html += "</body></html>"
+    return html.encode("utf-8")
+
 with st.sidebar:
     st.title("🤖 Bot 1.0")
     st.header("⚙️ Verwaltung")
     uploaded_files = st.file_uploader("PDFs hochladen", type="pdf", accept_multiple_files=True)
 
-    # Änderung 2: Cache bereinigen wenn PDF entfernt wird
     current_names = [f.name for f in uploaded_files] if uploaded_files else []
     for cached in list(st.session_state.pdf_cache.keys()):
         if cached not in current_names:
@@ -67,106 +108,28 @@ with st.sidebar:
         st.session_state.ki_expanded = {}
         st.rerun()
 
+    if st.session_state.messages:
+        st.subheader("💾 Export")
+        st.download_button(
+            label="📄 Als TXT exportieren",
+            data=export_as_txt(),
+            file_name="bot1_export.txt",
+            mime="text/plain"
+        )
+        st.download_button(
+            label="🌐 Als HTML exportieren",
+            data=export_as_html(),
+            file_name="bot1_export.html",
+            mime="text/html"
+        )
+
     if st.session_state.history:
         st.subheader("🕒 Letzte Suchen")
         for item in st.session_state.history:
             if st.sidebar.button(f"🔍 {item}", key=f"hist_{item}"):
                 pass
 
-user_input = st.text_input("Deine Frage oder dein Suchbegriff:", "")
-
-if uploaded_files and user_input:
-    add_to_history(user_input)
-    all_results = []
-    full_context_for_ki = ""
-
-    with st.status("Analysiere Dokumente mit Bot 1.0...", expanded=False) as status:
-        for up_file in uploaded_files:
-            if up_file.name not in st.session_state.pdf_cache:
-                doc = fitz.open(stream=up_file.read(), filetype="pdf")
-                st.session_state.pdf_cache[up_file.name] = [p.get_text() for p in doc]
-
-            pages = st.session_state.pdf_cache[up_file.name]
-            for i, page_text in enumerate(pages):
-                if user_input.lower() in page_text.lower():
-                    start_pos = page_text.lower().find(user_input.lower())
-                    snippet = page_text[max(0, start_pos-250):min(len(page_text), start_pos+250)].replace("\n", " ")
-                    highlighted = highlight_text(snippet, user_input)
-                    all_results.append({"file": up_file.name, "page": i+1, "text": highlighted})
-                    full_context_for_ki += f"\n[Quelle: {up_file.name}, Seite: {i+1}]\n{page_text}"
-
-        status.update(label="Suche abgeschlossen!", state="complete")
-
-    # Änderung 3: Nachrichten auf 10 begrenzen
-    if len(st.session_state.messages) > 10:
-        st.session_state.messages = st.session_state.messages[-10:]
-
-    total = len(all_results)
-    col1, col2 = st.columns([1, 1.2])
-
-    with col1:
-        st.subheader(f"📄 Einzelne Fundstellen ({total} gesamt, zeige max. {max_treffer})")
-        if all_results:
-            for res in all_results[:max_treffer]:
-                with st.expander(f"Seite {res['page']} - {res['file']}"):
-                    st.markdown(res['text'], unsafe_allow_html=True)
-        else:
-            st.warning("Keine direkten Treffer.")
-
-    with col2:
-        st.subheader("💬 KI-Chat & Zusammenfassung")
-
-        if KI_BEREIT and (not st.session_state.messages or st.session_state.messages[-1]["content"] != user_input):
-            st.session_state.messages.append({"role": "user", "content": user_input})
-
-            try:
-                available_models = [m.name for m in genai.list_models()]
-
-                preferred = [
-                    "models/gemini-3-flash-preview",
-                    "models/gemini-3.1-flash-lite-preview",
-                    "models/gemini-2.5-flash-lite",
-                    "models/gemini-2.5-flash",
-                    "models/gemini-2.0-flash-lite",
-                    "models/gemini-2.0-flash",
-                ]
-
-                target_model = None
-                for candidate in preferred:
-                    if candidate in available_models:
-                        target_model = candidate
-                        break
-
-                if target_model is None:
-                    target_model = available_models[0]
-
-                model = genai.GenerativeModel(target_model)
-
-                with st.spinner(f"Bot 1.0 nutzt {target_model}..."):
-                    prompt = (
-                        f"SYSTEM: Du bist Bot 1.0. Nutze NUR den PDF-Inhalt unten.\n"
-                        f"KONTEXT AUS PDFs:\n{full_context_for_ki[:15000]}\n\n"
-                        f"AUFGABE: Beantworte die Frage '{user_input}' ausfuehrlich und als Zusammenfassung. "
-                        f"Nutze Fakten aus dem Kontext. Antworte auf DEUTSCH.\n"
-                        f"AM ENDE: Fuege 'Recherche-Empfehlung' mit Suchbegriffen hinzu."
-                    )
-
-                    response = model.generate_content(prompt)
-                    ki_antwort = response.text
-                    st.session_state.messages.append({"role": "assistant", "content": ki_antwort})
-
-            except Exception as e:
-                st.error(f"KI-Fehler: {e}")
-                st.info(f"Verfuegbare Modelle: {[m.name for m in genai.list_models()]}")
-
-        for idx, m in enumerate(st.session_state.messages):
-            if m["role"] == "user":
-                with st.chat_message("user"):
-                    st.markdown(m["content"])
-            else:
-                msg_key = f"ki_msg_{idx}"
-                if msg_key not in st.session_state.ki_expanded:
-                    st.session_state.ki_expanded[msg_key] = True
-
-                with st.expander("🤖 KI-Antwort anzeigen / einklappen", expanded=st.session_state.ki_expanded[msg_key]):
-                    st.markdown(m["content"])
+    st.divider()
+    st.subheader("🖥️ Lokal installieren")
+    st.markdown("""
+Führe diese Befehle im Terminal aus:
