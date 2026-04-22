@@ -6,7 +6,7 @@ import re
 # Seite konfigurieren
 st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
 
-# --- BLAUE MARKIERUNG CSS (FIXED) ---
+# --- BLAUE MARKIERUNG CSS ---
 st.markdown("""
     <style>
     .highlight { color: #1E90FF; font-weight: bold; }
@@ -48,7 +48,6 @@ if uploaded_files and suchbegriff:
     
     with st.status("Suche in Dokumenten...", expanded=False) as status:
         for up_file in uploaded_files:
-            # Schneller Cache-Check
             if up_file.name not in st.session_state.pdf_cache:
                 doc = fitz.open(stream=up_file.read(), filetype="pdf")
                 st.session_state.pdf_cache[up_file.name] = [p.get_text() for p in doc]
@@ -59,7 +58,6 @@ if uploaded_files and suchbegriff:
                     start_pos = page_text.lower().find(suchbegriff.lower())
                     snippet = page_text[max(0, start_pos-250):min(len(page_text), start_pos+250)].replace("\n", " ")
                     
-                    # Blaues Highlighting
                     pattern = re.compile(re.escape(suchbegriff), re.IGNORECASE)
                     highlighted = pattern.sub(f'<span class="highlight">{suchbegriff}</span>', snippet)
                     
@@ -70,22 +68,28 @@ if uploaded_files and suchbegriff:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("📄 Fundstellen")
-        for res in all_results[:10]:
-            with st.expander(f"Seite {res['page']} - {res['file']}"):
-                st.markdown(res['text'], unsafe_allow_html=True)
+        if all_results:
+            for res in all_results[:10]:
+                with st.expander(f"Seite {res['page']} - {res['file']}"):
+                    st.markdown(res['text'], unsafe_allow_html=True)
+        else:
+            st.warning("Nichts gefunden.")
 
     with col2:
         st.subheader("💬 Chat")
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        if KI_BEREIT and st.button("KI Analyse"):
+        if KI_BEREIT and st.button("KI Analyse starten"):
             st.session_state.messages.append({"role": "user", "content": suchbegriff})
             with st.chat_message("user"): st.markdown(suchbegriff)
             
             model = genai.GenerativeModel("gemini-1.5-flash")
-            prompt = f"Antworte NUR mit PDF-Infos: {full_text_context[:10000]}\nFrage: {suchbegriff}\nAm Ende: 🌐 Recherche-Empfehlung."
+            prompt = f"Nutze NUR PDF-Infos: {full_text_context[:10000]}\nFrage: {suchbegriff}\nAm Ende: 🌐 Recherche-Empfehlung."
             
-            response = model.generate_content(prompt)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-            with st.chat_message("assistant"): st.markdown(response.text)
+            try:
+                response = model.generate_content(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                with st.chat_message("assistant"): st.markdown(response.text)
+            except Exception as e:
+                st.error(f"KI-Fehler: {e}")
