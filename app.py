@@ -3,7 +3,7 @@ import fitz  # PyMuPDF
 import google.generativeai as genai
 import re
 
-st.set_page_config(page_title="Bot 1.1", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
 
 st.markdown("""
     <style>
@@ -52,6 +52,12 @@ with st.sidebar:
     st.header("⚙️ Verwaltung")
     uploaded_files = st.file_uploader("PDFs hochladen", type="pdf", accept_multiple_files=True)
 
+    # Änderung 2: Cache bereinigen wenn PDF entfernt wird
+    current_names = [f.name for f in uploaded_files] if uploaded_files else []
+    for cached in list(st.session_state.pdf_cache.keys()):
+        if cached not in current_names:
+            del st.session_state.pdf_cache[cached]
+
     st.subheader("🔧 Einstellungen")
     max_treffer = st.slider("Max. angezeigte Treffer", min_value=5, max_value=100, value=25, step=5)
 
@@ -90,6 +96,10 @@ if uploaded_files and user_input:
                     full_context_for_ki += f"\n[Quelle: {up_file.name}, Seite: {i+1}]\n{page_text}"
 
         status.update(label="Suche abgeschlossen!", state="complete")
+
+    # Änderung 3: Nachrichten auf 10 begrenzen
+    if len(st.session_state.messages) > 10:
+        st.session_state.messages = st.session_state.messages[-10:]
 
     total = len(all_results)
     col1, col2 = st.columns([1, 1.2])
