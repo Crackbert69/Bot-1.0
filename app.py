@@ -131,5 +131,12 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🖥️ Lokal installieren")
-    st.markdown("""
-Führe diese Befehle im Terminal aus:
+    st.markdown(
+        "**1. Terminal:**\n\n"
+        "`pip install streamlit pymupdf google-generativeai`\n\n"
+        "**2. App starten:**\n\n"
+        "`streamlit run app.py`\n\n"
+        "**3. API Key** in `.streamlit/secrets.toml`:\n\n"
+        "`GEMINI_API_KEY = 'dein-key'`\n\n"
+        "Dann oeffnet sich: `http://localhost:8501`"
+    )
