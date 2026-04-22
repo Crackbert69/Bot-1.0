@@ -3,11 +3,14 @@ import fitz  # PyMuPDF
 import google.generativeai as genai
 import re
 
-st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Bot 1.1", page_icon="🤖", layout="wide")
 
 st.markdown("""
     <style>
-    div.stMarkdown b { color: #1E90FF; font-weight: bold; }
+    .treffer-highlight {
+        color: #1E90FF;
+        font-weight: bold;
+    }
     .stChatMessage { border-radius: 10px; }
     </style>
 """, unsafe_allow_html=True)
@@ -29,20 +32,33 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "pdf_cache" not in st.session_state:
     st.session_state.pdf_cache = {}
+if "ki_expanded" not in st.session_state:
+    st.session_state.ki_expanded = {}
 
 def add_to_history(query):
     if query and query not in st.session_state.history:
         st.session_state.history.insert(0, query)
         st.session_state.history = st.session_state.history[:5]
 
+def highlight_text(text, keyword):
+    pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+    return pattern.sub(
+        lambda m: f'<span class="treffer-highlight">{m.group()}</span>',
+        text
+    )
+
 with st.sidebar:
     st.title("🤖 Bot 1.0")
     st.header("⚙️ Verwaltung")
     uploaded_files = st.file_uploader("PDFs hochladen", type="pdf", accept_multiple_files=True)
 
+    st.subheader("🔧 Einstellungen")
+    max_treffer = st.slider("Max. angezeigte Treffer", min_value=5, max_value=100, value=25, step=5)
+
     if st.button("Gesamten Verlauf löschen"):
         st.session_state.messages = []
         st.session_state.history = []
+        st.session_state.ki_expanded = {}
         st.rerun()
 
     if st.session_state.history:
@@ -69,36 +85,28 @@ if uploaded_files and user_input:
                 if user_input.lower() in page_text.lower():
                     start_pos = page_text.lower().find(user_input.lower())
                     snippet = page_text[max(0, start_pos-250):min(len(page_text), start_pos+250)].replace("\n", " ")
-
-                    pattern = re.compile(re.escape(user_input), re.IGNORECASE)
-                    highlighted = pattern.sub(f"**{user_input}**", snippet)
-
+                    highlighted = highlight_text(snippet, user_input)
                     all_results.append({"file": up_file.name, "page": i+1, "text": highlighted})
                     full_context_for_ki += f"\n[Quelle: {up_file.name}, Seite: {i+1}]\n{page_text}"
 
         status.update(label="Suche abgeschlossen!", state="complete")
 
+    total = len(all_results)
     col1, col2 = st.columns([1, 1.2])
 
     with col1:
-        st.subheader("📄 Einzelne Fundstellen")
+        st.subheader(f"📄 Einzelne Fundstellen ({total} gesamt, zeige max. {max_treffer})")
         if all_results:
-            for res in all_results[:10]:
+            for res in all_results[:max_treffer]:
                 with st.expander(f"Seite {res['page']} - {res['file']}"):
-                    st.markdown(res['text'])
+                    st.markdown(res['text'], unsafe_allow_html=True)
         else:
             st.warning("Keine direkten Treffer.")
 
     with col2:
         st.subheader("💬 KI-Chat & Zusammenfassung")
 
-        for m in st.session_state.messages:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"])
-
         if KI_BEREIT and (not st.session_state.messages or st.session_state.messages[-1]["content"] != user_input):
-            with st.chat_message("user"):
-                st.markdown(user_input)
             st.session_state.messages.append({"role": "user", "content": user_input})
 
             try:
@@ -108,7 +116,9 @@ if uploaded_files and user_input:
                     "models/gemini-3-flash-preview",
                     "models/gemini-3.1-flash-lite-preview",
                     "models/gemini-2.5-flash-lite",
+                    "models/gemini-2.5-flash",
                     "models/gemini-2.0-flash-lite",
+                    "models/gemini-2.0-flash",
                 ]
 
                 target_model = None
@@ -132,11 +142,21 @@ if uploaded_files and user_input:
                     )
 
                     response = model.generate_content(prompt)
-
-                    with st.chat_message("assistant"):
-                        st.markdown(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    ki_antwort = response.text
+                    st.session_state.messages.append({"role": "assistant", "content": ki_antwort})
 
             except Exception as e:
                 st.error(f"KI-Fehler: {e}")
                 st.info(f"Verfuegbare Modelle: {[m.name for m in genai.list_models()]}")
+
+        for idx, m in enumerate(st.session_state.messages):
+            if m["role"] == "user":
+                with st.chat_message("user"):
+                    st.markdown(m["content"])
+            else:
+                msg_key = f"ki_msg_{idx}"
+                if msg_key not in st.session_state.ki_expanded:
+                    st.session_state.ki_expanded[msg_key] = True
+
+                with st.expander("🤖 KI-Antwort anzeigen / einklappen", expanded=st.session_state.ki_expanded[msg_key]):
+                    st.markdown(m["content"])
