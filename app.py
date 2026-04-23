@@ -190,8 +190,8 @@ if uploaded_files and user_input:
                 available_models = [m.name for m in genai.list_models()]
 
                 preferred = [
-                    "models/gemini-3-flash-preview",
                     "models/gemini-3.1-flash-lite-preview",
+                    "models/gemini-3-flash-preview",
                     "models/gemini-2.5-flash-lite",
                     "models/gemini-2.5-flash",
                     "models/gemini-2.0-flash-lite",
