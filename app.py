@@ -1,22 +1,18 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz
 import google.generativeai as genai
 import re
 import subprocess
 import sys
 import os
-from google.generativeai.types import Tool
-from google.generativeai import protos
 from io import BytesIO
+from google.generativeai import protos
 
 st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
 
 st.markdown("""
     <style>
-    .treffer-highlight {
-        color: #1E90FF;
-        font-weight: bold;
-    }
+    .treffer-highlight { color: #1E90FF; font-weight: bold; }
     .stChatMessage { border-radius: 10px; }
     </style>
 """, unsafe_allow_html=True)
@@ -52,14 +48,10 @@ def add_to_history(query):
 
 def highlight_text(text, keyword):
     pattern = re.compile(re.escape(keyword), re.IGNORECASE)
-    return pattern.sub(
-        lambda m: f'<span class="treffer-highlight">{m.group()}</span>',
-        text
-    )
+    return pattern.sub(lambda m: f'<span class="treffer-highlight">{m.group()}</span>', text)
 
 def export_as_txt():
-    lines = []
-    lines.append("=== Bot 1.0 - Exportierte KI-Antworten ===\n")
+    lines = ["=== Bot 1.0 - Exportierte KI-Antworten ===\n"]
     for m in st.session_state.messages:
         if m["role"] == "user":
             lines.append(f"\n[FRAGE]\n{m['content']}\n")
@@ -118,18 +110,8 @@ with st.sidebar:
 
     if st.session_state.messages:
         st.subheader("💾 Export")
-        st.download_button(
-            label="📄 Als TXT exportieren",
-            data=export_as_txt(),
-            file_name="bot1_export.txt",
-            mime="text/plain"
-        )
-        st.download_button(
-            label="🌐 Als HTML exportieren",
-            data=export_as_html(),
-            file_name="bot1_export.html",
-            mime="text/html"
-        )
+        st.download_button(label="📄 Als TXT exportieren", data=export_as_txt(), file_name="bot1_export.txt", mime="text/plain")
+        st.download_button(label="🌐 Als HTML exportieren", data=export_as_html(), file_name="bot1_export.html", mime="text/html")
 
     if st.session_state.history:
         st.subheader("🕒 Letzte Suchen")
@@ -161,7 +143,6 @@ if uploaded_files and user_input:
             if up_file.name not in st.session_state.pdf_cache:
                 doc = fitz.open(stream=up_file.read(), filetype="pdf")
                 st.session_state.pdf_cache[up_file.name] = [p.get_text() for p in doc]
-
             pages = st.session_state.pdf_cache[up_file.name]
             for i, page_text in enumerate(pages):
                 if user_input.lower() in page_text.lower():
@@ -170,7 +151,6 @@ if uploaded_files and user_input:
                     highlighted = highlight_text(snippet, user_input)
                     all_results.append({"file": up_file.name, "page": i+1, "text": highlighted})
                     full_context_for_ki += f"\n[Quelle: {up_file.name}, Seite: {i+1}]\n{page_text}"
-
         status.update(label="Suche abgeschlossen!", state="complete")
 
     if len(st.session_state.messages) > 10:
@@ -193,10 +173,8 @@ if uploaded_files and user_input:
 
         if KI_BEREIT and (not st.session_state.messages or st.session_state.messages[-1]["content"] != user_input):
             st.session_state.messages.append({"role": "user", "content": user_input})
-
             try:
                 available_models = [m.name for m in genai.list_models()]
-
                 preferred = [
                     "models/gemini-3.1-flash-lite-preview",
                     "models/gemini-3-flash-preview",
@@ -205,18 +183,14 @@ if uploaded_files and user_input:
                     "models/gemini-2.0-flash-lite",
                     "models/gemini-2.0-flash",
                 ]
-
                 target_model = None
                 for candidate in preferred:
                     if candidate in available_models:
                         target_model = candidate
                         break
-
                 if target_model is None:
                     target_model = available_models[0]
-
                 model = genai.GenerativeModel(target_model)
-
                 with st.spinner(f"Bot 1.0 nutzt {target_model}..."):
                     prompt = (
                         f"SYSTEM: Du bist Bot 1.0. Nutze NUR den PDF-Inhalt unten.\n"
@@ -225,14 +199,10 @@ if uploaded_files and user_input:
                         f"Nutze Fakten aus dem Kontext. Antworte auf DEUTSCH.\n"
                         f"AM ENDE: Fuege 'Recherche-Empfehlung' mit Suchbegriffen hinzu."
                     )
-
                     response = model.generate_content(prompt)
-                    ki_antwort = response.text
-                    st.session_state.messages.append({"role": "assistant", "content": ki_antwort})
-
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
             except Exception as e:
                 st.error(f"KI-Fehler: {e}")
-                st.info(f"Verfuegbare Modelle: {[m.name for m in genai.list_models()]}")
 
         for idx, m in enumerate(st.session_state.messages):
             if m["role"] == "user":
@@ -245,16 +215,13 @@ if uploaded_files and user_input:
                 with st.expander("🤖 KI-Antwort anzeigen / einklappen", expanded=st.session_state.ki_expanded[msg_key]):
                     st.markdown(m["content"])
 
-# --- WEB SUCHE - unterhalb beider Spalten ---
 st.divider()
 st.subheader("🌐 KI Web-Suche")
 st.caption("Sucht im Internet – unabhaengig vom PDF. Nutzt Gemini 2.0 Flash.")
 
 web_col1, web_col2 = st.columns([4, 1])
-
 with web_col1:
     web_input = st.text_input("Suchbegriff fuer Web-Suche:", "", key="web_input")
-
 with web_col2:
     st.markdown("<br>", unsafe_allow_html=True)
     web_suchen = st.button("🔍 Suchen", use_container_width=True)
@@ -262,32 +229,18 @@ with web_col2:
 if web_suchen:
     if web_input and KI_BEREIT:
         st.session_state.web_messages.append({"role": "user", "content": web_input})
-
         try:
             web_model = genai.GenerativeModel("models/gemini-2.0-flash")
-
+            search_tool = protos.Tool(google_search=protos.GoogleSearch())
             with st.spinner("Suche im Internet..."):
                 web_prompt = (
                     f"Suche im Internet nach aktuellen Informationen zu: '{web_input}'\n"
                     f"Fasse die Ergebnisse ausfuehrlich auf DEUTSCH zusammen.\n"
                     f"Gib am Ende die wichtigsten Quellen an."
                 )
-
-                    from google.generativeai import protos
-                    
-                    search_tool = protos.Tool(
-                       google_search=protos.GoogleSearch()
-                    )
-
-                    web_response = web_model.generate_content(
-                       web_prompt,
-                       tools=[search_tool]
-                    )
-    
-                    web_antwort = web_response.text
-
+                web_response = web_model.generate_content(web_prompt, tools=[search_tool])
+                web_antwort = web_response.text
                 st.session_state.web_messages.append({"role": "assistant", "content": web_antwort})
-
         except Exception as e:
             st.error(f"Web-Suche Fehler: {e}")
     elif not web_input:
