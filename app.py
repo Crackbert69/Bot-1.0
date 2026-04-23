@@ -38,6 +38,10 @@ if "pdf_cache" not in st.session_state:
     st.session_state.pdf_cache = {}
 if "ki_expanded" not in st.session_state:
     st.session_state.ki_expanded = {}
+if "web_messages" not in st.session_state:
+    st.session_state.web_messages = []
+if "web_expanded" not in st.session_state:
+    st.session_state.web_expanded = {}
 
 def add_to_history(query):
     if query and query not in st.session_state.history:
@@ -106,6 +110,8 @@ with st.sidebar:
         st.session_state.messages = []
         st.session_state.history = []
         st.session_state.ki_expanded = {}
+        st.session_state.web_messages = []
+        st.session_state.web_expanded = {}
         st.rerun()
 
     if st.session_state.messages:
@@ -234,6 +240,55 @@ if uploaded_files and user_input:
                 msg_key = f"ki_msg_{idx}"
                 if msg_key not in st.session_state.ki_expanded:
                     st.session_state.ki_expanded[msg_key] = True
-
                 with st.expander("🤖 KI-Antwort anzeigen / einklappen", expanded=st.session_state.ki_expanded[msg_key]):
+                    st.markdown(m["content"])
+
+        # --- WEB SUCHE ---
+        st.divider()
+        st.subheader("🌐 KI Web-Suche")
+        st.caption("Sucht im Internet – unabhaengig vom PDF. Nutzt Gemini 2.0 Flash.")
+
+        web_input = st.text_input("Suchbegriff fuer Web-Suche:", "", key="web_input")
+
+        if st.button("🔍 Im Internet suchen"):
+            if web_input and KI_BEREIT:
+                st.session_state.web_messages.append({"role": "user", "content": web_input})
+
+                try:
+                    web_model = genai.GenerativeModel("models/gemini-2.0-flash")
+
+                    tools = [{"google_search": {}}]
+
+                    with st.spinner("Suche im Internet..."):
+                        web_prompt = (
+                            f"Suche im Internet nach aktuellen Informationen zu: '{web_input}'\n"
+                            f"Fasse die Ergebnisse ausfuehrlich auf DEUTSCH zusammen.\n"
+                            f"Gib am Ende die wichtigsten Quellen an."
+                        )
+
+                        web_response = web_model.generate_content(
+                            web_prompt,
+                            tools=[{"google_search": {}}]
+                        )
+
+                        web_antwort = web_response.text
+                        st.session_state.web_messages.append({"role": "assistant", "content": web_antwort})
+
+                except Exception as e:
+                    st.error(f"Web-Suche Fehler: {e}")
+            elif not web_input:
+                st.warning("Bitte einen Suchbegriff eingeben.")
+
+        if len(st.session_state.web_messages) > 10:
+            st.session_state.web_messages = st.session_state.web_messages[-10:]
+
+        for idx, m in enumerate(st.session_state.web_messages):
+            if m["role"] == "user":
+                with st.chat_message("user"):
+                    st.markdown(m["content"])
+            else:
+                msg_key = f"web_msg_{idx}"
+                if msg_key not in st.session_state.web_expanded:
+                    st.session_state.web_expanded[msg_key] = True
+                with st.expander("🌐 Web-Antwort anzeigen / einklappen", expanded=st.session_state.web_expanded[msg_key]):
                     st.markdown(m["content"])
