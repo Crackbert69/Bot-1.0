@@ -231,7 +231,7 @@ if web_suchen:
         st.session_state.web_messages.append({"role": "user", "content": web_input})
         try:
             web_model = genai.GenerativeModel("models/gemini-2.0-flash")
-            search_tool = protos.Tool(google_search=protos.GoogleSearch())
+            search_tool = search_tool = {"google_search_retrieval": {}}
             with st.spinner("Suche im Internet..."):
                 web_prompt = (
                     f"Suche im Internet nach aktuellen Informationen zu: '{web_input}'\n"
