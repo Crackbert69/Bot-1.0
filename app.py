@@ -273,7 +273,7 @@ if web_suchen:
                     f"Gib am Ende die wichtigsten Quellen an."
                 )
 
-                from google.generativeai import protos
+                    from google.generativeai import protos
                     
                     search_tool = protos.Tool(
                        google_search=protos.GoogleSearch()
