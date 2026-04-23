@@ -5,6 +5,8 @@ import re
 import subprocess
 import sys
 import os
+from google.generativeai.types import Tool
+from google.generativeai import protos
 from io import BytesIO
 
 st.set_page_config(page_title="Bot 1.0", page_icon="🤖", layout="wide")
@@ -271,12 +273,19 @@ if web_suchen:
                     f"Gib am Ende die wichtigsten Quellen an."
                 )
 
-                web_response = web_model.generate_content(
-                    web_prompt,
-                    tools=[{"google_search": {}}]
-                )
+                from google.generativeai import protos
+                    
+                    search_tool = protos.Tool(
+                       google_search=protos.GoogleSearch()
+                    )
 
-                web_antwort = web_response.text
+                    web_response = web_model.generate_content(
+                       web_prompt,
+                       tools=[search_tool]
+                    )
+    
+                    web_antwort = web_response.text
+
                 st.session_state.web_messages.append({"role": "assistant", "content": web_antwort})
 
         except Exception as e:
